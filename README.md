@@ -17,116 +17,57 @@ Allow site operations teams to authenticate, select an event, choose email templ
 
 ## How It Works
 
-```plantuml
-@startuml
-title CONNECT 2026 - Email Sender Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Browser as Browser<br/>(HTML Tool)
+    participant Kaltura as Kaltura API
+    participant EPM as EPM API
+    participant Registry as App Registry
+    participant Messaging as Messaging API
 
-autonumber
-actor User
-participant "Browser\n(HTML Tool)" as Browser
-participant "Kaltura API" as Kaltura
-participant "EPM API" as EPM
-participant "App Registry" as Registry
-participant "Messaging API" as Messaging
+    Note over User,Messaging: Authentication
+    User->>Browser: Enter email, password, Partner ID
+    Browser->>Kaltura: POST /user/action/loginByLoginId
+    Note right of Kaltura: Parameters:<br/>- loginId (email)<br/>- password<br/>- partnerId<br/>- expiry: 86400<br/>- privileges: all:*,disableentitlement<br/>- format=1 (JSON)
+    Kaltura-->>Browser: KS Token (string)
+    
+    Browser->>EPM: POST /epm/auth/loginKS
+    Note right of EPM: Body: {"ks": "..."}<br/>Returns JWT for EPM APIs
+    EPM-->>Browser: JWT Token
 
-== Authentication ==
-User -> Browser: Enter email, password, Partner ID
-Browser -> Kaltura: POST /user/action/loginByLoginId
-note right of Kaltura
-  Parameters:
-  - loginId (email)
-  - password
-  - partnerId
-  - expiry: 86400
-  - privileges: all:*,disableentitlement
-  - format=1 (JSON)
-end note
-Kaltura --> Browser: KS Token (string)
+    Note over User,Messaging: Event Selection
+    Browser->>EPM: POST /epm/events/list
+    Note right of EPM: Headers:<br/>- Authorization: Bearer {jwt}<br/><br/>Fetches all events with pagination
+    EPM-->>Browser: Events list (MongoDB ObjectIDs)
+    User->>Browser: Select event from dropdown
 
-Browser -> EPM: POST /epm/auth/loginKS
-note right of EPM
-  Body: {"ks": "..."}
-  Returns JWT for EPM APIs
-end note
-EPM --> Browser: JWT Token
+    Note over User,Messaging: Data Loading
+    Browser->>Registry: POST /api/v1/app-registry/list
+    Note right of Registry: Headers:<br/>- Authorization: Bearer {ks}<br/><br/>Body: {"filter": {"appCustomIdIn": [kalturaId]}}<br/>Returns App GUID for messaging
+    Registry-->>Browser: App GUID
+    
+    Browser->>EPM: POST /epm/emails/list
+    Note right of EPM: Headers:<br/>- Authorization: Bearer {jwt}<br/>- x-eventId: {eventId} (MongoDB ObjectID)
+    EPM-->>Browser: Email templates list
+    
+    Browser->>Kaltura: POST /group_group/action/list
+    Note right of Kaltura: Parameters:<br/>- ks: {ks}<br/>- filter[typeEqual]: 1<br/>- pager[pageSize]: 500<br/>- format=1<br/><br/>Fetches all groups with pagination
+    Kaltura-->>Browser: Groups list
 
-== Event Selection ==
-Browser -> EPM: POST /epm/events/list
-note right of EPM
-  Headers:
-  - Authorization: Bearer {jwt}
-  
-  Fetches all events with pagination
-end note
-EPM --> Browser: Events list (MongoDB ObjectIDs)
+    Note over User,Messaging: cURL Command Generation
+    User->>Browser: Select template and target groups
+    Browser->>Browser: Generate cURL command
+    Note right of Browser: Builds payload:<br/>- receiverType: "group"<br/>- type: "email"<br/>- appGuid: {from Registry}<br/>- templateId: {selected}<br/>- msgParams: {auto-extracted}<br/>- groupIds: [selected groups]
+    Browser-->>User: Display cURL command
 
-User -> Browser: Select event from dropdown
-
-== Data Loading ==
-Browser -> Registry: POST /api/v1/app-registry/list
-note right of Registry
-  Headers:
-  - Authorization: Bearer {ks}
-  
-  Body: {"filter": {"appCustomIdIn": [kalturaId]}}
-  Returns App GUID for messaging
-end note
-Registry --> Browser: App GUID
-
-Browser -> EPM: POST /epm/emails/list
-note right of EPM
-  Headers:
-  - Authorization: Bearer {jwt}
-  - x-eventId: {eventId} (MongoDB ObjectID)
-end note
-EPM --> Browser: Email templates list
-
-Browser -> Kaltura: POST /group_group/action/list
-note right of Kaltura
-  Parameters:
-  - ks: {ks}
-  - filter[typeEqual]: 1
-  - pager[pageSize]: 500
-  - format=1
-  
-  Fetches all groups with pagination
-end note
-Kaltura --> Browser: Groups list
-
-== cURL Command Generation ==
-User -> Browser: Select template and target groups
-Browser -> Browser: Generate cURL command
-note right of Browser
-  Builds payload:
-  - receiverType: "group"
-  - type: "email"
-  - appGuid: {from Registry}
-  - templateId: {selected}
-  - msgParams: {auto-extracted from template}
-  - groupIds: [selected groups]
-end note
-
-Browser --> User: Display cURL command
-
-== Manual Execution ==
-User -> User: Copy cURL command
-User -> Messaging: Run cURL in Terminal/Postman
-note right of Messaging
-  POST /api/v1/message/send
-  
-  Headers:
-  - Authorization: Bearer {ks}
-  
-  CORS Issue: Messaging API doesn't 
-  support browser CORS, so command 
-  must be run from Terminal or Postman
-end note
-Messaging --> User: Email sent confirmation
-
-@enduml
+    Note over User,Messaging: Manual Execution
+    User->>User: Copy cURL command
+    User->>Messaging: Run cURL in Terminal/Postman
+    Note right of Messaging: POST /api/v1/message/send<br/><br/>Headers:<br/>- Authorization: Bearer {ks}<br/><br/>CORS Issue: Messaging API doesn't<br/>support browser CORS, so command<br/>must be run from Terminal or Postman
+    Messaging-->>User: Email sent confirmation
 ```
-
-[View diagram](https://www.planttext.com/)
 
 ## Usage
 
