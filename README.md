@@ -1,4 +1,5 @@
 # CONNECT 2026 - Email Sender Tool
+https://kaltura.atlassian.net/wiki/x/qQO3ewE
 
 Internal operations tool for sending emails to groups using Kaltura's messaging system.
 
